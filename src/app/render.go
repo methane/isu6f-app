@@ -2,12 +2,12 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"net/http"
 	"strconv"
 
 	"goji.io/pat"
+	"golang.org/x/net/context"
 )
 
 func renderRoomImage(room *Room) []byte {
