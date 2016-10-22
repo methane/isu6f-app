@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"runtime/debug"
 	"sync"
@@ -56,12 +57,12 @@ func (r *RoomRepo) Init() {
 	log.Println("room repo init end")
 }
 
-func (r *RoomRepo) Get(ID int64) (Room, bool) {
+func (r *RoomRepo) Get(ID int64) (*Room, bool) {
 	r.Lock()
 	defer r.Unlock()
 
 	room, ok := r.Rooms[ID]
-	return *room, ok
+	return room, ok
 }
 
 func (r *RoomRepo) UpdateWatcherCount(roomID int64, tokenID int64) {
@@ -158,4 +159,22 @@ func (r *RoomRepo) AddStroke(roomID int64, stroke Stroke, points []Point) {
 
 	stroke.Points = points
 	room.Strokes = append(room.Strokes, stroke)
+
+	room.svgMtx.Lock()
+	if room.svgInit {
+		buf := room.svgBuf
+		fmt.Fprintf(buf,
+			`<polyline id="%d" stroke="rgba(%d,%d,%d,%v)" stroke-width="%d" stroke-linecap="round" stroke-linejoin="round" fill="none" points="`,
+			stroke.ID, stroke.Red, stroke.Green, stroke.Blue, stroke.Alpha, stroke.Width)
+		first := true
+		for _, point := range stroke.Points {
+			if !first {
+				buf.WriteByte(' ')
+			}
+			fmt.Fprintf(buf, `%.4f,%.4f`, point.X, point.Y)
+			first = false
+		}
+		buf.WriteString(`"></polyline>`)
+	}
+	room.svgMtx.Unlock()
 }

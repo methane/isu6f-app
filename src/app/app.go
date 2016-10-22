@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -60,6 +62,10 @@ type Room struct {
 
 	watchers map[int64]time.Time
 	ownerID  int64
+
+	svgMtx  sync.RWMutex
+	svgInit bool
+	svgBuf  *bytes.Buffer
 }
 
 func printAndFlush(w http.ResponseWriter, content string) {
@@ -349,7 +355,7 @@ func getAPIRoomsID(ctx context.Context, w http.ResponseWriter, r *http.Request) 
 
 	b, _ := json.Marshal(struct {
 		Room *Room `json:"room"`
-	}{Room: &room})
+	}{Room: room})
 
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -376,40 +382,15 @@ func getAPIStreamRoomsID(ctx context.Context, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	/*
-		room, err := getRoom(id)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				printAndFlush(w, "event:bad_request\n"+"data:この部屋は存在しません\n\n")
-			} else {
-				outputError(w, err)
-			}
-			return
-		}
-	*/
 	_, ok := roomRepo.Get(id)
 	if !ok {
 		printAndFlush(w, "event:bad_request\n"+"data:この部屋は存在しません\n\n")
 	}
 
-	/*
-		err = updateRoomWatcher(room.ID, t.ID)
-		if err != nil {
-			outputError(w, err)
-			return
-		}
-	*/
 	roomRepo.UpdateWatcherCount(id, t.ID)
 
 	room, _ := roomRepo.Get(id)
 	watcherCount := room.WatcherCount
-	/*
-		watcherCount, err := getWatcherCount(room.ID)
-		if err != nil {
-			outputError(w, err)
-			return
-		}
-	*/
 
 	printAndFlush(w, "retry:500\n\n"+"event:watcher_count\n"+"data:"+strconv.Itoa(watcherCount)+"\n\n")
 
