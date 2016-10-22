@@ -140,6 +140,7 @@ func getRoom(roomID int64) (*Room, error) {
 	return r, nil
 }
 
+/*
 func getWatcherCount(roomID int64) (int, error) {
 	query := "SELECT COUNT(*) AS `watcher_count` FROM `room_watchers`"
 	query += " WHERE `room_id` = ? AND `updated_at` > CURRENT_TIMESTAMP(6) - INTERVAL 3 SECOND"
@@ -162,6 +163,7 @@ func updateRoomWatcher(roomID int64, tokenID int64) error {
 	_, err := dbx.Exec(query, roomID, tokenID)
 	return err
 }
+*/
 
 func outputErrorMsg(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
@@ -340,41 +342,50 @@ func getAPIRoomsID(ctx context.Context, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	room, err := getRoom(id)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			outputErrorMsg(w, http.StatusNotFound, "この部屋は存在しません。")
-		} else {
-			outputError(w, err)
+	room, ok := roomRepo.Get(id)
+	if !ok {
+		outputErrorMsg(w, http.StatusNotFound, "この部屋は存在しません。")
+	}
+
+	/*
+				room, err := getRoom(id)
+				if err != nil {
+					if err == sql.ErrNoRows {
+						outputErrorMsg(w, http.StatusNotFound, "この部屋は存在しません。")
+					} else {
+						outputError(w, err)
+					}
+					return
+				}
+
+			strokes, err := getStrokes(room.ID, 0)
+			if err != nil {
+				outputError(w, err)
+				return
+			}
+
+		for i, s := range strokes {
+			p, err := getStrokePoints(s.ID)
+			if err != nil {
+				outputError(w, err)
+				return
+			}
+			strokes[i].Points = p
 		}
-		return
-	}
 
-	strokes, err := getStrokes(room.ID, 0)
-	if err != nil {
-		outputError(w, err)
-		return
-	}
-
-	for i, s := range strokes {
-		p, err := getStrokePoints(s.ID)
+		room.Strokes = strokes
+	*/
+	/*
+		room.WatcherCount, err = getWatcherCount(room.ID)
 		if err != nil {
 			outputError(w, err)
 			return
 		}
-		strokes[i].Points = p
-	}
-
-	room.Strokes = strokes
-	room.WatcherCount, err = getWatcherCount(room.ID)
-	if err != nil {
-		outputError(w, err)
-		return
-	}
+	*/
 
 	b, _ := json.Marshal(struct {
 		Room *Room `json:"room"`
-	}{Room: room})
+	}{Room: &room})
 
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
 	w.WriteHeader(http.StatusOK)

@@ -34,16 +34,13 @@ func (r *RoomRepo) Init() {
 	err := dbx.Select(&rooms, "SELECT `id`, `name`, `canvas_width`, `canvas_height`, `created_at` FROM `rooms` ORDER BY `id` ASC")
 	need(err)
 
-	for i, room := range rooms {
+	for i, _ := range rooms {
 		strokes := []Stroke{}
-		err := dbx.Select(&strokes, "SELECT `id`, `room_id`, `width`, `red`, `green`, `blue`, `alpha`, `created_at` FROM `strokes` WHERE `room_id` = ? ORDER BY `id` ASC", room.ID)
+		err := dbx.Select(&strokes, "SELECT `id`, `room_id`, `width`, `red`, `green`, `blue`, `alpha`, `created_at` FROM `strokes` WHERE `room_id` = ? ORDER BY `id` ASC", rooms[i].ID)
 		need(err)
-		rooms[i].Strokes = strokes
-		rooms[i].watchers = map[int64]time.Time{}
 
 		var owner_id int64
-		err = dbx.QueryRow("SELECT token_id FROM `room_owners` WHERE `room_id` = ?", room.ID).Scan(&owner_id)
-		rooms[i].ownerID = owner_id
+		err = dbx.QueryRow("SELECT token_id FROM `room_owners` WHERE `room_id` = ?", rooms[i].ID).Scan(&owner_id)
 
 		for j, s := range strokes {
 			ps := []Point{}
@@ -51,7 +48,10 @@ func (r *RoomRepo) Init() {
 			strokes[j].Points = ps
 		}
 
-		r.Rooms[room.ID] = &room
+		rooms[i].ownerID = owner_id
+		rooms[i].Strokes = strokes
+		rooms[i].watchers = map[int64]time.Time{}
+		r.Rooms[rooms[i].ID] = &rooms[i]
 	}
 	log.Println("room repo init end")
 }
@@ -73,6 +73,9 @@ func (r *RoomRepo) UpdateWatcherCount(roomID int64, tokenID int64) {
 		log.Println("[warn] no such room")
 	}
 
+	if room.watchers == nil {
+		room.watchers = map[int64]time.Time{}
+	}
 	room.watchers[tokenID] = time.Now()
 
 	for token, t := range room.watchers {
@@ -92,11 +95,19 @@ func (r *RoomRepo) GetWatcherCount(roomID int64) int {
 	if !ok {
 		log.Println("[warn] no such room")
 	}
+
+	for token, t := range room.watchers {
+		if time.Since(t) >= time.Second*3 {
+			delete(room.watchers, token)
+		}
+	}
+	room.WatcherCount = len(room.watchers)
+
 	return room.WatcherCount
 }
 
 func (r *RoomRepo) GetStrokes(roomID int64, greaterThanID int64) []Stroke {
-	var result []Stroke
+	result := []Stroke{}
 
 	r.Lock()
 	room, ok := r.Rooms[roomID]
@@ -131,6 +142,7 @@ func (r *RoomRepo) AddRoom(room *Room, ownerID int64) {
 	defer r.Unlock()
 
 	room.ownerID = ownerID
+	room.watchers = map[int64]time.Time{}
 	r.Rooms[room.ID] = room
 }
 

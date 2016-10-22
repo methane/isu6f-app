@@ -14,6 +14,10 @@ help:
 build:
 	$(GO) build -o app app
 
+.PHONY: race
+race:
+	$(GO) build -race -o app app
+
 .PHONY: restart
 restart:
 	$(HOME)/restart
