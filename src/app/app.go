@@ -647,7 +647,7 @@ func main() {
 	dbname := "isuketch"
 
 	dsn := fmt.Sprintf(
-		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local",
+		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local&interpolateParams=true",
 		user,
 		password,
 		host,
@@ -661,20 +661,21 @@ func main() {
 	}
 	defer dbx.Close()
 
+	mux := goji.NewMux()
+	dbx.SetConnMaxLifetime(time.Second * 120)
+	dbx.SetMaxOpenConns(4)
+	dbx.SetMaxIdleConns(4)
 	for {
-		err = dbx.Ping()
+		err := dbx.Ping()
 		if err == nil {
-			log.Println("DB connected:", err)
 			break
 		}
-		log.Println("DB ping error:", err)
-		time.Sleep(time.Second)
+		log.Printf("failed to ping DB: %s", err)
 	}
-
+	log.Println("succeeded to connect db.")
 	OnStartup()
 
 	mux := goji.NewMux()
-
 	mux.HandleFunc(pat.Get("/startpprof"), func(w http.ResponseWriter, r *http.Request) {
 		StartProfile(time.Second * 60)
 		w.WriteHeader(http.StatusOK)
