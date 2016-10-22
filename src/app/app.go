@@ -683,6 +683,7 @@ func main() {
 			break
 		}
 		log.Printf("failed to ping DB: %s", err)
+		time.Sleep(time.Second)
 	}
 	log.Println("succeeded to connect db.")
 

@@ -2,12 +2,14 @@ package main
 
 import (
 	"log"
+	"runtime/debug"
 	"sync"
 	"time"
 )
 
 func need(err error) {
 	if err != nil {
+		debug.PrintStack()
 		log.Println(err)
 	}
 }
@@ -24,16 +26,17 @@ func NewRoomRepo() *RoomRepo {
 }
 
 func (r *RoomRepo) Init() {
+	log.Println("room repo init start")
 	r.Lock()
 	defer r.Unlock()
 
 	rooms := []Room{}
-	err := dbx.Get(r, "SELECT `id`, `name`, `canvas_width`, `canvas_height`, `created_at` FROM `rooms` ORDER BY `id` ASC")
+	err := dbx.Select(&rooms, "SELECT `id`, `name`, `canvas_width`, `canvas_height`, `created_at` FROM `rooms` ORDER BY `id` ASC")
 	need(err)
 
 	for i, room := range rooms {
 		strokes := []Stroke{}
-		err := dbx.Select(&strokes, "SELECT `id`, `room_id`, `width`, `red`, `green`, `blue`, `alpha`, `created_at` FROM `strokes` WHERE `room_id` = ? ORDER BY `id` ASC")
+		err := dbx.Select(&strokes, "SELECT `id`, `room_id`, `width`, `red`, `green`, `blue`, `alpha`, `created_at` FROM `strokes` WHERE `room_id` = ? ORDER BY `id` ASC", room.ID)
 		need(err)
 		rooms[i].Strokes = strokes
 		rooms[i].watchers = map[int64]time.Time{}
@@ -50,6 +53,7 @@ func (r *RoomRepo) Init() {
 
 		r.Rooms[room.ID] = &room
 	}
+	log.Println("room repo init end")
 }
 
 func (r *RoomRepo) Get(ID int64) (Room, bool) {
