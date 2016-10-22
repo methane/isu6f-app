@@ -59,6 +59,7 @@ type Room struct {
 	WatcherCount int       `json:"watcher_count"`
 
 	watchers map[int64]time.Time
+	ownerID  int64
 }
 
 func printAndFlush(w http.ResponseWriter, content string) {
@@ -320,6 +321,8 @@ func postAPIRooms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	roomRepo.AddRoom(room, t.ID)
+
 	b, _ := json.Marshal(struct {
 		Room *Room `json:"room"`
 	}{Room: room})
@@ -527,7 +530,7 @@ func postAPIStrokesRoomsID(ctx context.Context, w http.ResponseWriter, r *http.R
 			return
 		}
 	*/
-	_, ok := roomRepo.Get(id)
+	room, ok := roomRepo.Get(id)
 	if !ok {
 		outputErrorMsg(w, http.StatusNotFound, "この部屋は存在しません。")
 	}
@@ -549,23 +552,31 @@ func postAPIStrokesRoomsID(ctx context.Context, w http.ResponseWriter, r *http.R
 		return
 	}
 
-	strokes, err := getStrokes(id, 0)
-	if err != nil {
-		outputError(w, err)
-		return
-	}
-	if len(strokes) == 0 {
-		query := "SELECT COUNT(*) AS cnt FROM `room_owners` WHERE `room_id` = ? AND `token_id` = ?"
-		cnt := 0
-		err = dbx.QueryRow(query, id, t.ID).Scan(&cnt)
+	/*
+		strokes, err := getStrokes(id, 0)
 		if err != nil {
 			outputError(w, err)
 			return
 		}
-		if cnt == 0 {
+	*/
+	strokeCount := roomRepo.GetStrokeCount(id)
+	if strokeCount == 0 {
+		if t.ID != room.ownerID {
 			outputErrorMsg(w, http.StatusBadRequest, "他人の作成した部屋に1画目を描くことはできません")
-			return
 		}
+		/*
+			query := "SELECT COUNT(*) AS cnt FROM `room_owners` WHERE `room_id` = ? AND `token_id` = ?"
+			cnt := 0
+			err = dbx.QueryRow(query, id, t.ID).Scan(&cnt)
+			if err != nil {
+				outputError(w, err)
+				return
+			}
+			if cnt == 0 {
+				outputErrorMsg(w, http.StatusBadRequest, "他人の作成した部屋に1画目を描くことはできません")
+				return
+			}
+		*/
 	}
 
 	tx := dbx.MustBegin()
@@ -612,6 +623,8 @@ func postAPIStrokesRoomsID(ctx context.Context, w http.ResponseWriter, r *http.R
 		outputError(w, err)
 		return
 	}
+
+	roomRepo.AddStroke(id, s, s.Points)
 
 	b, _ := json.Marshal(struct {
 		Stroke Stroke `json:"stroke"`
@@ -661,7 +674,6 @@ func main() {
 	}
 	defer dbx.Close()
 
-	mux := goji.NewMux()
 	dbx.SetConnMaxLifetime(time.Second * 120)
 	dbx.SetMaxOpenConns(4)
 	dbx.SetMaxIdleConns(4)
@@ -673,6 +685,7 @@ func main() {
 		log.Printf("failed to ping DB: %s", err)
 	}
 	log.Println("succeeded to connect db.")
+
 	OnStartup()
 
 	mux := goji.NewMux()

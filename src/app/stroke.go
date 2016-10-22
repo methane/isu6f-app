@@ -38,6 +38,10 @@ func (r *RoomRepo) Init() {
 		rooms[i].Strokes = strokes
 		rooms[i].watchers = map[int64]time.Time{}
 
+		var owner_id int64
+		err = dbx.QueryRow("SELECT token_id FROM `room_owners` WHERE `room_id` = ?", room.ID).Scan(&owner_id)
+		rooms[i].ownerID = owner_id
+
 		for j, s := range strokes {
 			ps := []Point{}
 			dbx.Select(&ps, "SELECT `id`, `stroke_id`, `x`, `y` FROM `points` WHERE `stroke_id` = ? ORDER BY `id` ASC", s.ID)
@@ -105,4 +109,37 @@ func (r *RoomRepo) GetStrokes(roomID int64, greaterThanID int64) []Stroke {
 	}
 	r.Unlock()
 	return result
+}
+
+func (r *RoomRepo) GetStrokeCount(roomID int64) int {
+	r.Lock()
+	defer r.Unlock()
+	room, ok := r.Rooms[roomID]
+	if !ok {
+		log.Println("[warn] no such room")
+		return 0
+	}
+	return len(room.Strokes)
+}
+
+func (r *RoomRepo) AddRoom(room *Room, ownerID int64) {
+	r.Lock()
+	defer r.Unlock()
+
+	room.ownerID = ownerID
+	r.Rooms[room.ID] = room
+}
+
+func (r *RoomRepo) AddStroke(roomID int64, stroke Stroke, points []Point) {
+	r.Lock()
+	defer r.Unlock()
+
+	room, ok := r.Rooms[roomID]
+	if !ok {
+		log.Println("[warn] no such room")
+		return
+	}
+
+	stroke.Points = points
+	room.Strokes = append(room.Strokes, stroke)
 }
