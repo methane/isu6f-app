@@ -12,7 +12,7 @@ help:
 
 .PHONY: build
 build:
-	$(GO) build -race -o app app
+	$(GO) build -o app app
 
 .PHONY: restart
 restart:
