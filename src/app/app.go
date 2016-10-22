@@ -347,42 +347,6 @@ func getAPIRoomsID(ctx context.Context, w http.ResponseWriter, r *http.Request) 
 		outputErrorMsg(w, http.StatusNotFound, "この部屋は存在しません。")
 	}
 
-	/*
-				room, err := getRoom(id)
-				if err != nil {
-					if err == sql.ErrNoRows {
-						outputErrorMsg(w, http.StatusNotFound, "この部屋は存在しません。")
-					} else {
-						outputError(w, err)
-					}
-					return
-				}
-
-			strokes, err := getStrokes(room.ID, 0)
-			if err != nil {
-				outputError(w, err)
-				return
-			}
-
-		for i, s := range strokes {
-			p, err := getStrokePoints(s.ID)
-			if err != nil {
-				outputError(w, err)
-				return
-			}
-			strokes[i].Points = p
-		}
-
-		room.Strokes = strokes
-	*/
-	/*
-		room.WatcherCount, err = getWatcherCount(room.ID)
-		if err != nil {
-			outputError(w, err)
-			return
-		}
-	*/
-
 	b, _ := json.Marshal(struct {
 		Room *Room `json:"room"`
 	}{Room: &room})
