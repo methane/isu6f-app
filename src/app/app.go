@@ -19,7 +19,8 @@ import (
 )
 
 var (
-	dbx *sqlx.DB
+	dbx      *sqlx.DB
+	roomRepo = NewRoomRepo()
 )
 
 type Token struct {
@@ -56,6 +57,8 @@ type Room struct {
 	Strokes      []Stroke  `json:"strokes"`
 	StrokeCount  int       `json:"stroke_count"`
 	WatcherCount int       `json:"watcher_count"`
+
+	watchers map[int64]time.Time
 }
 
 func printAndFlush(w http.ResponseWriter, content string) {
@@ -395,27 +398,40 @@ func getAPIStreamRoomsID(ctx context.Context, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	room, err := getRoom(id)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			printAndFlush(w, "event:bad_request\n"+"data:この部屋は存在しません\n\n")
-		} else {
-			outputError(w, err)
+	/*
+		room, err := getRoom(id)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				printAndFlush(w, "event:bad_request\n"+"data:この部屋は存在しません\n\n")
+			} else {
+				outputError(w, err)
+			}
+			return
 		}
-		return
+	*/
+	_, ok := roomRepo.Get(id)
+	if !ok {
+		printAndFlush(w, "event:bad_request\n"+"data:この部屋は存在しません\n\n")
 	}
 
-	err = updateRoomWatcher(room.ID, t.ID)
-	if err != nil {
-		outputError(w, err)
-		return
-	}
+	/*
+		err = updateRoomWatcher(room.ID, t.ID)
+		if err != nil {
+			outputError(w, err)
+			return
+		}
+	*/
+	roomRepo.UpdateWatcherCount(id, t.ID)
 
-	watcherCount, err := getWatcherCount(room.ID)
-	if err != nil {
-		outputError(w, err)
-		return
-	}
+	room, _ := roomRepo.Get(id)
+	watcherCount := room.WatcherCount
+	/*
+		watcherCount, err := getWatcherCount(room.ID)
+		if err != nil {
+			outputError(w, err)
+			return
+		}
+	*/
 
 	printAndFlush(w, "retry:500\n\n"+"event:watcher_count\n"+"data:"+strconv.Itoa(watcherCount)+"\n\n")
 
@@ -435,34 +451,45 @@ func getAPIStreamRoomsID(ctx context.Context, w http.ResponseWriter, r *http.Req
 		loop--
 		time.Sleep(500 * time.Millisecond)
 
-		strokes, err := getStrokes(room.ID, int64(lastStrokeID))
-		if err != nil {
-			outputError(w, err)
-			return
-		}
-
-		for _, s := range strokes {
-			s.Points, err = getStrokePoints(s.ID)
+		/*
+			strokes, err := getStrokes(room.ID, int64(lastStrokeID))
 			if err != nil {
 				outputError(w, err)
 				return
 			}
+		*/
+		strokes := roomRepo.GetStrokes(id, int64(lastStrokeID))
+
+		for _, s := range strokes {
+			/*
+				s.Points, err = getStrokePoints(s.ID)
+				if err != nil {
+					outputError(w, err)
+					return
+				}
+			*/
 			d, _ := json.Marshal(s)
 			printAndFlush(w, "id:"+strconv.FormatInt(s.ID, 10)+"\n\n"+"event:stroke\n"+"data:"+string(d)+"\n\n")
 			lastStrokeID = s.ID
 		}
 
-		err = updateRoomWatcher(room.ID, t.ID)
-		if err != nil {
-			outputError(w, err)
-			return
-		}
+		roomRepo.UpdateWatcherCount(id, t.ID)
+		/*
+			err = updateRoomWatcher(room.ID, t.ID)
+			if err != nil {
+				outputError(w, err)
+				return
+			}
+		*/
 
-		newWatcherCount, err := getWatcherCount(room.ID)
-		if err != nil {
-			outputError(w, err)
-			return
-		}
+		room, _ = roomRepo.Get(id)
+		newWatcherCount := room.WatcherCount
+		/*
+			if err != nil {
+				outputError(w, err)
+				return
+			}
+		*/
 		if newWatcherCount != watcherCount {
 			watcherCount = newWatcherCount
 			printAndFlush(w, "event:watcher_count\n"+"data:"+strconv.Itoa(watcherCount)+"\n\n")
@@ -489,14 +516,20 @@ func postAPIStrokesRoomsID(ctx context.Context, w http.ResponseWriter, r *http.R
 		return
 	}
 
-	room, err := getRoom(id)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			outputErrorMsg(w, http.StatusNotFound, "この部屋は存在しません。")
-		} else {
-			outputError(w, err)
+	/*
+		room, err := getRoom(id)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				outputErrorMsg(w, http.StatusNotFound, "この部屋は存在しません。")
+			} else {
+				outputError(w, err)
+			}
+			return
 		}
-		return
+	*/
+	_, ok := roomRepo.Get(id)
+	if !ok {
+		outputErrorMsg(w, http.StatusNotFound, "この部屋は存在しません。")
 	}
 
 	body, err := ioutil.ReadAll(r.Body)
@@ -516,7 +549,7 @@ func postAPIStrokesRoomsID(ctx context.Context, w http.ResponseWriter, r *http.R
 		return
 	}
 
-	strokes, err := getStrokes(room.ID, 0)
+	strokes, err := getStrokes(id, 0)
 	if err != nil {
 		outputError(w, err)
 		return
@@ -524,7 +557,7 @@ func postAPIStrokesRoomsID(ctx context.Context, w http.ResponseWriter, r *http.R
 	if len(strokes) == 0 {
 		query := "SELECT COUNT(*) AS cnt FROM `room_owners` WHERE `room_id` = ? AND `token_id` = ?"
 		cnt := 0
-		err = dbx.QueryRow(query, room.ID, t.ID).Scan(&cnt)
+		err = dbx.QueryRow(query, id, t.ID).Scan(&cnt)
 		if err != nil {
 			outputError(w, err)
 			return
@@ -540,7 +573,7 @@ func postAPIStrokesRoomsID(ctx context.Context, w http.ResponseWriter, r *http.R
 	query += " VALUES(?, ?, ?, ?, ?, ?)"
 
 	result := tx.MustExec(query,
-		room.ID,
+		id,
 		postedStroke.Width,
 		postedStroke.Red,
 		postedStroke.Green,
@@ -589,6 +622,10 @@ func postAPIStrokesRoomsID(ctx context.Context, w http.ResponseWriter, r *http.R
 	w.Write(b)
 }
 
+func OnStartup() {
+	roomRepo.Init()
+}
+
 func main() {
 	host := os.Getenv("MYSQL_HOST")
 	if host == "" {
@@ -624,6 +661,18 @@ func main() {
 	}
 	defer dbx.Close()
 
+	for {
+		err = dbx.Ping()
+		if err == nil {
+			log.Println("DB connected:", err)
+			break
+		}
+		log.Println("DB ping error:", err)
+		time.Sleep(time.Second)
+	}
+
+	OnStartup()
+
 	mux := goji.NewMux()
 
 	mux.HandleFunc(pat.Get("/startpprof"), func(w http.ResponseWriter, r *http.Request) {
@@ -639,5 +688,5 @@ func main() {
 	mux.HandleFuncC(pat.Get("/api/stream/rooms/:id"), getAPIStreamRoomsID)
 	mux.HandleFuncC(pat.Post("/api/strokes/rooms/:id"), postAPIStrokesRoomsID)
 
-	log.Fatal(http.ListenAndServe("0.0.0.0:80", mux))
+	log.Fatal(http.ListenAndServe(":8080", mux))
 }
