@@ -1,5 +1,5 @@
 #!/bin/bash -x
-TARGET_HOST='52.198.216.223'
+TARGET_HOST='https://13.73.5.10'
 SCRIPT_DIR=$(cd $(dirname $0) && pwd)
 cd $SCRIPT_DIR
 

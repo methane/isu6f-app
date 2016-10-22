@@ -625,6 +625,13 @@ func main() {
 	defer dbx.Close()
 
 	mux := goji.NewMux()
+
+	mux.HandleFunc(pat.Get("/startpprof"), func(w http.ResponseWriter, r *http.Request) {
+		StartProfile(time.Second * 60)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok."))
+	})
+
 	mux.HandleFunc(pat.Post("/api/csrf_token"), postAPICsrfToken)
 	mux.HandleFunc(pat.Get("/api/rooms"), getAPIRooms)
 	mux.HandleFunc(pat.Post("/api/rooms"), postAPIRooms)
