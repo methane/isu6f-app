@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/klauspost/compress/gzip"
 	"io"
 	"log"
 	"net/http"
@@ -40,14 +41,26 @@ func renderRoomImage(w io.Writer, room *Room) {
 		}
 
 		room.svgBuf = buf
+		gbuf := append(buf.Bytes(), "</svg>"...)
+		room.svgCompressed = compress(gbuf)
 		room.svgInit = true
 	}
 
-	svg := room.svgBuf.Bytes()
+	gsvg := room.svgCompressed
 	room.svgMtx.Unlock()
 
-	w.Write(svg)
-	w.Write([]byte(`</svg>`))
+	w.Write(gsvg)
+}
+
+func compress(src []byte) []byte {
+	buf := &bytes.Buffer{}
+	w, err := gzip.NewWriterLevel(buf, 7)
+	if err != nil {
+		panic(err)
+	}
+	w.Write(src)
+	w.Close()
+	return buf.Bytes()
 }
 
 func getRoomImageID(ctx context.Context, w http.ResponseWriter, r *http.Request) {
@@ -67,5 +80,6 @@ func getRoomImageID(ctx context.Context, w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Content-Encoding", "gzip")
 	renderRoomImage(w, room)
 }

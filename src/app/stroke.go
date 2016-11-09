@@ -1,10 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"runtime/debug"
-	"sync"
 	"time"
 )
 
@@ -16,18 +16,28 @@ func need(err error) {
 }
 
 type RoomRepo struct {
-	sync.Mutex
+	lock  chan bool
 	Rooms map[int64]*Room
 }
 
 func NewRoomRepo() *RoomRepo {
 	return &RoomRepo{
+		lock:  make(chan bool, 1),
 		Rooms: map[int64]*Room{},
 	}
 }
 
+func (r *RoomRepo) Lock() {
+	r.lock <- true
+}
+
+func (r *RoomRepo) Unlock() {
+	<-r.lock
+}
+
 func (r *RoomRepo) Init() {
 	log.Println("room repo init start")
+
 	r.Lock()
 	defer r.Unlock()
 
@@ -47,10 +57,12 @@ func (r *RoomRepo) Init() {
 			ps := []Point{}
 			dbx.Select(&ps, "SELECT `id`, `stroke_id`, `x`, `y` FROM `points` WHERE `stroke_id` = ? ORDER BY `id` ASC", s.ID)
 			strokes[j].Points = ps
+			strokes[j].json, err = json.Marshal(strokes[j])
 		}
 
 		rooms[i].ownerID = owner_id
 		rooms[i].Strokes = strokes
+		rooms[i].StrokeCount = len(strokes)
 		rooms[i].watchers = map[int64]time.Time{}
 		r.Rooms[rooms[i].ID] = &rooms[i]
 	}
@@ -65,7 +77,7 @@ func (r *RoomRepo) Get(ID int64) (*Room, bool) {
 	return room, ok
 }
 
-func (r *RoomRepo) UpdateWatcherCount(roomID int64, tokenID int64) {
+func (r *RoomRepo) UpdateWatcherCount(roomID int64, tokenID int64) int {
 	r.Lock()
 	defer r.Unlock()
 
@@ -86,6 +98,7 @@ func (r *RoomRepo) UpdateWatcherCount(roomID int64, tokenID int64) {
 	}
 
 	room.WatcherCount = len(room.watchers)
+	return room.WatcherCount
 }
 
 func (r *RoomRepo) GetWatcherCount(roomID int64) int {
@@ -119,7 +132,7 @@ func (r *RoomRepo) GetStrokes(roomID int64, greaterThanID int64) []Stroke {
 	// lockの外にだしたいが怖い
 	for i, s := range room.Strokes {
 		if s.ID > greaterThanID {
-			result = append(result, room.Strokes[i:]...)
+			result = room.Strokes[i:]
 			break
 		}
 	}
@@ -148,19 +161,26 @@ func (r *RoomRepo) AddRoom(room *Room, ownerID int64) {
 }
 
 func (r *RoomRepo) AddStroke(roomID int64, stroke Stroke, points []Point) {
-	r.Lock()
-	defer r.Unlock()
+	stroke.Points = points
+	var err error
+	stroke.json, err = json.Marshal(stroke)
+	if err != nil {
+		panic(err)
+	}
 
+	r.Lock()
 	room, ok := r.Rooms[roomID]
 	if !ok {
 		log.Println("[warn] no such room")
+		r.Unlock()
 		return
 	}
 
-	stroke.Points = points
 	room.Strokes = append(room.Strokes, stroke)
+	room.StrokeCount = len(room.Strokes)
 
 	room.svgMtx.Lock()
+	r.Unlock()
 	if room.svgInit {
 		buf := room.svgBuf
 		fmt.Fprintf(buf,
@@ -175,6 +195,7 @@ func (r *RoomRepo) AddStroke(roomID int64, stroke Stroke, points []Point) {
 			first = false
 		}
 		buf.WriteString(`"></polyline>`)
+		room.svgCompressed = compress(append(buf.Bytes(), "</svg>"...))
 	}
 	room.svgMtx.Unlock()
 }
